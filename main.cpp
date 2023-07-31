@@ -7,11 +7,14 @@
 #include <handleapi.h>
 
 #define CONTROL_BOARD "control-"
+#define TOP_BOARD "top-"
 #define ENDLINE '^'
 
 char ControlBoardPort[25];
+char TopBoardPort[25];
 
 uint8_t ArgumentQuanityControlBoard[] = {11, 8, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+uint8_t ArgumentQuanityTopBoard[] = {7, 4, 0, 0, 0, 0, 0, 0, 0, 0, 2};
 
 std::string TerminalData;
 
@@ -21,6 +24,7 @@ void WritePort(HANDLE hSerial, std::string message);
 bool ConfigPort(HANDLE hSerial);
 void WriteTxt(void);
 void ParserControlBoard(char *buffer);
+void ParserTopBoard(char *buffer);
 void searchComPort(void);
 void OpenPorts(void);
 
@@ -52,8 +56,28 @@ struct ControlBoardReceivedVar{
     char Version[10];
 }ControlBoardReceivedVar;
 
+struct TopBoardReceivedVar{
+    char hLed[10];
+    char sLed[10];
+    char vLed[10];
+    char modeLed[10];
+    char fxDelayLed[10];
+    char blinkDelayLed[10];
+    char reverseDirLed[10];
+    char gammaLed[10];
+
+    char Temperature[10];
+    char FanPWM[10];
+    char FanSpeed[10];
+    char CaseOpen[10];
+
+    char uId[40];
+    char Version[10];
+}TopBoardReceivedVar;
+
     // Otwarcie portu COM
     HANDLE hControlBoard;
+    HANDLE hTopBoard;
 
     void removeSubstring(std::string& str, const std::string& substr) {
     size_t pos = str.find(substr);
@@ -67,12 +91,18 @@ int main() {
    // sprintf(ControlBoardPort, "\\\\.\\COM7");
 
      hControlBoard = CreateFile(ControlBoardPort, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+     hTopBoard = CreateFile(TopBoardPort, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hControlBoard == INVALID_HANDLE_VALUE) {
-        std::cout << "Nie można otworzyć portu COM." << std::endl;
-        return 1;
+        std::cout << "Nie można otworzyć portu COM ControlBoard." << std::endl;
+        //return 1;
+    }
+       if (hTopBoard == INVALID_HANDLE_VALUE) {
+        std::cout << "Nie można otworzyć portu COM TopBoard." << std::endl;
+        //return 1;
     }
 
     ConfigPort(hControlBoard);
+    ConfigPort(hTopBoard);
 
     // Uruchomienie wątku do odczytu z portu COM
    // std::thread readThread(ReadPort, hControlBoard);
@@ -80,6 +110,10 @@ int main() {
    std::thread readThreadControlBoard([](HANDLE handle, void(*func)(char*)) {
     ReadPort(handle, func);
 }, hControlBoard, ParserControlBoard);
+
+   std::thread readThreadTopBoard([](HANDLE handle, void(*func)(char*)) {
+    ReadPort(handle, func);
+}, hTopBoard, ParserTopBoard);
 
 
     // Uruchomienie wątku do zapisu do portu COM
@@ -105,10 +139,12 @@ int main() {
             WritePort(hControlBoard, TerminalData);
             TerminalData.clear();
         }
-        else if (TerminalData.find("screen") != std::string::npos)
+        else if (TerminalData.find(TOP_BOARD) != std::string::npos)
         {
-            removeSubstring(TerminalData, "screen");
+            removeSubstring(TerminalData, TOP_BOARD);
             std::cout << TerminalData << std::endl;
+            WritePort(hTopBoard, TerminalData);
+            TerminalData.clear();
         }
 
         std::cin.clear();
@@ -121,6 +157,7 @@ int main() {
 
     // Zakończenie wątków
     readThreadControlBoard.join();
+    readThreadTopBoard.join();
     //writeThread.join();
     writeTxtThread.join();
 
@@ -238,7 +275,21 @@ void WriteTxt(void)
                     << "Logo pwm: " << ControlBoardReceivedVar.LogoPwm << std::endl
                     << "Logo dimmer time: " << ControlBoardReceivedVar.LogoDimm << std::endl
                     << "Door is open: " << ControlBoardReceivedVar.DoorOpen << std::endl
-                    << "Error code: " << ControlBoardReceivedVar.ErrorCode;
+                    << "Error code: " << ControlBoardReceivedVar.ErrorCode <<std::endl
+                    << "----TopBoard " << TopBoardReceivedVar.uId << "----" << std::endl
+                    << "Version" << TopBoardReceivedVar.Version << std::endl
+                    << "H led value: " << TopBoardReceivedVar.hLed << std::endl
+                    << "S led value: " << TopBoardReceivedVar.sLed << std::endl
+                    << "V led value: " << TopBoardReceivedVar.vLed << std::endl
+                    << "Mode Led: " << TopBoardReceivedVar.modeLed << std::endl
+                    << "Fx delay led: " << TopBoardReceivedVar.fxDelayLed << std::endl
+                    << "Blink delay led: " << TopBoardReceivedVar.blinkDelayLed << std::endl
+                    << "Reverse fx enabled: " << TopBoardReceivedVar.reverseDirLed << std::endl
+                    << "Gamma corection enabled: " << TopBoardReceivedVar.gammaLed << std::endl
+                    << "Temperature: " << TopBoardReceivedVar.Temperature << std::endl
+                    << "Fan PWM: " << TopBoardReceivedVar.FanPWM << std::endl
+                    << "Fan speed: " << TopBoardReceivedVar.FanSpeed << std::endl
+                    << "Case open: " << TopBoardReceivedVar.CaseOpen;
 
 
         OutFile.open("Output.txt");
@@ -297,6 +348,42 @@ void ParserControlBoard(char *buffer)
     case 10:
         strcpy(ControlBoardReceivedVar.uId, &tmpCommandArgument[0][0]);
         strcpy(ControlBoardReceivedVar.Version, &tmpCommandArgument[1][0]);
+        break;
+    }
+}
+
+void ParserTopBoard(char *buffer)
+{
+    char * ParsePointer = strtok(buffer, "/");
+    uint8_t CommandID = atoi(ParsePointer);
+    char tmpCommandArgument[20][30]; //20 command arg 30 char
+
+    for(uint8_t i = 0; i < ArgumentQuanityControlBoard[CommandID]; i++)
+    {
+        char * ParsePointer = strtok(NULL, "/");
+        sprintf(&tmpCommandArgument[i][0], "%s", ParsePointer);
+    }
+    switch(CommandID)
+    {
+    case 0:
+        strcpy(TopBoardReceivedVar.hLed, &tmpCommandArgument[0][0]);
+        strcpy(TopBoardReceivedVar.sLed, &tmpCommandArgument[1][0]);
+        strcpy(TopBoardReceivedVar.vLed, &tmpCommandArgument[2][0]);
+        strcpy(TopBoardReceivedVar.modeLed, &tmpCommandArgument[3][0]);
+        strcpy(TopBoardReceivedVar.fxDelayLed, &tmpCommandArgument[4][0]);
+        strcpy(TopBoardReceivedVar.blinkDelayLed, &tmpCommandArgument[5][0]);
+        strcpy(TopBoardReceivedVar.reverseDirLed, &tmpCommandArgument[6][0]);
+        strcpy(TopBoardReceivedVar.gammaLed, &tmpCommandArgument[7][0]);
+        break;
+    case 1:
+        strcpy(TopBoardReceivedVar.Temperature, &tmpCommandArgument[0][0]);
+        strcpy(TopBoardReceivedVar.FanPWM, &tmpCommandArgument[1][0]);
+        strcpy(TopBoardReceivedVar.FanSpeed, &tmpCommandArgument[2][0]);
+        strcpy(TopBoardReceivedVar.CaseOpen, &tmpCommandArgument[3][0]);
+        break;
+    case 10:
+        strcpy(TopBoardReceivedVar.uId, &tmpCommandArgument[0][0]);
+        strcpy(TopBoardReceivedVar.Version, &tmpCommandArgument[1][0]);
         break;
     }
 }
@@ -371,12 +458,14 @@ void searchComPort()
                     // Kontynuuj przetwarzanie pozostałych informacji
                 }
             }
-            else if (line.find("GSM_Thermometer") != std::string::npos)
+            else if (line.find("FalconEye TopBoard") != std::string::npos)
             {
                 std::string comPort = getComPort(line);
                 if (!comPort.empty())
                 {
-                    std::cout << "GSM_Thermometer znaleziony na porcie: " << comPort << std::endl;
+                    strcpy(TopBoardPort, comPort.c_str());
+                    ModifyPortFormat(TopBoardPort);
+                    std::cout << "FalconEye TopBoard znaleziony na porcie: " << comPort << std::endl;
                     // Kontynuuj przetwarzanie pozostałych informacji
                 }
             }
