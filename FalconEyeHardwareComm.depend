@@ -1,0 +1,10 @@
+# depslib dependency file v1.0
+1689674014 source:c:\users\adrian\documents\codeblocks\falconeyehardwarecomm\main.cpp
+	<iostream>
+	<string>
+	<thread>
+	<windows.h>
+	<fstream>
+	<sstream>
+	<handleapi.h>
+

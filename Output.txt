@@ -1,0 +1,19 @@
+----ControlBoard ----
+Input: 0
+Output: 0
+Pwm1: 0
+Pwm2: 0
+Pwm3: 0
+Pwm4: 0
+Temperature: 29.75
+MCU Temperature: 24.98
+12V: 0.00
+5V: 4.74
+Current: 0.00
+Light mode:0
+Light pwm: 990
+Light dimmer time: 1
+Logo mode: 0
+Logo pwm: 90
+Logo dimmer time: 2
+Error code: 0
