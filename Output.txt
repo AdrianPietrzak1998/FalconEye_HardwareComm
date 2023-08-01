@@ -6,10 +6,10 @@ Pwm1: 0
 Pwm2: 0
 Pwm3: 0
 Pwm4: 0
-Temperature: 26.81
+Temperature: 24.93
 MCU Temperature: 24.98
 12V: 0.00
-5V: 4.84
+5V: 4.80
 Current: 0.00
 Light mode:0
 Light pwm: 990
@@ -19,8 +19,8 @@ Logo pwm: 90
 Logo dimmer time: 2
 Door is open: 0
 Error code: 0
-----TopBoard 0x3230303030301623a060f00----
-Version1.0
+----TopBoard ----
+Version
 H led value: 150
 S led value: 200
 V led value: 255
@@ -29,7 +29,8 @@ Fx delay led: 30
 Blink delay led: 100
 Reverse fx enabled: 1
 Gamma corection enabled: 1
-Temperature: 25.50
+Temperature: 24.50
 Fan PWM: 0
 Fan speed: 0
 Case open: 0
+Error code: 0

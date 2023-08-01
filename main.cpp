@@ -10,6 +10,13 @@
 #define TOP_BOARD "top-"
 #define ENDLINE '^'
 
+enum DevciceName{
+DEV_CONTROL_BOARD = 0,
+DEV_TOP_BOARD
+}DeviceName;
+
+uint8_t ConectedDevices[3];
+
 char ControlBoardPort[25];
 char TopBoardPort[25];
 
@@ -29,6 +36,8 @@ void searchComPort(void);
 void OpenPorts(void);
 
 bool threadTerminate;
+bool readThreadTerminate;
+bool readThreadFault;
 
 struct ControlBoardReceivedVar{
     char Input[20];
@@ -70,6 +79,7 @@ struct TopBoardReceivedVar{
     char FanPWM[10];
     char FanSpeed[10];
     char CaseOpen[10];
+    char ErrorCode[10];
 
     char uId[40];
     char Version[10];
@@ -78,6 +88,9 @@ struct TopBoardReceivedVar{
     // Otwarcie portu COM
     HANDLE hControlBoard;
     HANDLE hTopBoard;
+
+    std::thread readThreadControlBoard;
+    std::thread readThreadTopBoard;
 
     void removeSubstring(std::string& str, const std::string& substr) {
     size_t pos = str.find(substr);
@@ -90,30 +103,43 @@ int main() {
     searchComPort();
    // sprintf(ControlBoardPort, "\\\\.\\COM7");
 
-     hControlBoard = CreateFile(ControlBoardPort, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-     hTopBoard = CreateFile(TopBoardPort, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hControlBoard == INVALID_HANDLE_VALUE) {
+     if(ConectedDevices[DEV_CONTROL_BOARD])hControlBoard = CreateFile(ControlBoardPort, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+     if(ConectedDevices[DEV_TOP_BOARD])hTopBoard = CreateFile(TopBoardPort, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hControlBoard == INVALID_HANDLE_VALUE && ConectedDevices[DEV_CONTROL_BOARD]) {
         std::cout << "Nie można otworzyć portu COM ControlBoard." << std::endl;
         //return 1;
     }
-       if (hTopBoard == INVALID_HANDLE_VALUE) {
+       if (hTopBoard == INVALID_HANDLE_VALUE && ConectedDevices[DEV_TOP_BOARD]) {
         std::cout << "Nie można otworzyć portu COM TopBoard." << std::endl;
         //return 1;
     }
 
-    ConfigPort(hControlBoard);
-    ConfigPort(hTopBoard);
+    if(ConectedDevices[DEV_CONTROL_BOARD])ConfigPort(hControlBoard);
+    if(ConectedDevices[DEV_TOP_BOARD])ConfigPort(hTopBoard);
 
     // Uruchomienie wątku do odczytu z portu COM
    // std::thread readThread(ReadPort, hControlBoard);
 
+/*
    std::thread readThreadControlBoard([](HANDLE handle, void(*func)(char*)) {
     ReadPort(handle, func);
 }, hControlBoard, ParserControlBoard);
 
+
+
    std::thread readThreadTopBoard([](HANDLE handle, void(*func)(char*)) {
     ReadPort(handle, func);
 }, hTopBoard, ParserTopBoard);
+*/
+
+     if(ConectedDevices[DEV_CONTROL_BOARD])
+     {
+         readThreadControlBoard = std::thread(ReadPort, hControlBoard, ParserControlBoard);
+     }
+     if(ConectedDevices[DEV_TOP_BOARD])
+     {
+         readThreadTopBoard = std::thread(ReadPort, hTopBoard, ParserTopBoard);
+     }
 
 
     // Uruchomienie wątku do zapisu do portu COM
@@ -124,6 +150,12 @@ int main() {
 
     while(true)
     {
+        if(readThreadFault)
+        {
+            OpenPorts();
+            readThreadFault = true;
+        }
+
         getline(std::cin, TerminalData);
         if(!TerminalData.compare("exit"))
         {
@@ -146,6 +178,7 @@ int main() {
             WritePort(hTopBoard, TerminalData);
             TerminalData.clear();
         }
+        else if (TerminalData.compare("refresh")) OpenPorts();
 
         std::cin.clear();
 
@@ -156,13 +189,14 @@ int main() {
    // std::cin.ignore();
 
     // Zakończenie wątków
-    readThreadControlBoard.join();
-    readThreadTopBoard.join();
+    if(readThreadControlBoard.joinable()) readThreadControlBoard.join();
+    if(readThreadTopBoard.joinable()) readThreadTopBoard.join();
     //writeThread.join();
     writeTxtThread.join();
 
     // Zamknięcie portu COM
     CloseHandle(hControlBoard);
+    CloseHandle(hTopBoard);
 
     return 0;
 }
@@ -198,10 +232,11 @@ void ReadPort(HANDLE hSerial, void(*ptrParser)(char*)) {
             }
         } else {
             std::cout << "Błąd podczas odczytu z portu COM." << std::endl;
-            OpenPorts();
-           // break;
+            readThreadFault = true;
+            readThreadTerminate = true;
+            break;
         }
-        if(threadTerminate) break;
+        if(threadTerminate || readThreadTerminate) break;
     }
 }
 
@@ -289,7 +324,8 @@ void WriteTxt(void)
                     << "Temperature: " << TopBoardReceivedVar.Temperature << std::endl
                     << "Fan PWM: " << TopBoardReceivedVar.FanPWM << std::endl
                     << "Fan speed: " << TopBoardReceivedVar.FanSpeed << std::endl
-                    << "Case open: " << TopBoardReceivedVar.CaseOpen;
+                    << "Case open: " << TopBoardReceivedVar.CaseOpen << std::endl
+                    << "Error code: " << TopBoardReceivedVar.ErrorCode;
 
 
         OutFile.open("Output.txt");
@@ -380,6 +416,7 @@ void ParserTopBoard(char *buffer)
         strcpy(TopBoardReceivedVar.FanPWM, &tmpCommandArgument[1][0]);
         strcpy(TopBoardReceivedVar.FanSpeed, &tmpCommandArgument[2][0]);
         strcpy(TopBoardReceivedVar.CaseOpen, &tmpCommandArgument[3][0]);
+        strcpy(TopBoardReceivedVar.ErrorCode, &tmpCommandArgument[4][0]);
         break;
     case 10:
         strcpy(TopBoardReceivedVar.uId, &tmpCommandArgument[0][0]);
@@ -449,6 +486,7 @@ void searchComPort()
         {
             if (line.find("FalconEye ControlBoard") != std::string::npos)
             {
+                ConectedDevices[DEV_CONTROL_BOARD] = 1;
                 std::string comPort = getComPort(line);
                 if (!comPort.empty())
                 {
@@ -460,6 +498,7 @@ void searchComPort()
             }
             else if (line.find("FalconEye TopBoard") != std::string::npos)
             {
+                ConectedDevices[DEV_TOP_BOARD] = 1;
                 std::string comPort = getComPort(line);
                 if (!comPort.empty())
                 {
@@ -475,15 +514,40 @@ void searchComPort()
 
 void OpenPorts(void)
 {
-    CloseHandle(hControlBoard);
-    Sleep(10000);
-        searchComPort();
+    //Terminate thread
+    readThreadTerminate = true;
 
-    HANDLE hControlBoard = CreateFile(ControlBoardPort, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hControlBoard == INVALID_HANDLE_VALUE) {
+    if(readThreadControlBoard.joinable()) readThreadControlBoard.join();
+    if(readThreadTopBoard.joinable()) readThreadTopBoard.join();
+    readThreadTerminate = false;
+
+    CloseHandle(hControlBoard);
+    CloseHandle(hTopBoard);
+
+    searchComPort();
+
+    if(ConectedDevices[DEV_CONTROL_BOARD]) hControlBoard = CreateFile(ControlBoardPort, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hControlBoard == INVALID_HANDLE_VALUE && ConectedDevices[DEV_CONTROL_BOARD]) {
         std::cout << "Nie można otworzyć portu COM." << std::endl;
         return;
     }
 
-    ConfigPort(hControlBoard);
+    if(ConectedDevices[DEV_TOP_BOARD]) hTopBoard = CreateFile(TopBoardPort, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hTopBoard == INVALID_HANDLE_VALUE && ConectedDevices[DEV_TOP_BOARD]) {
+        std::cout << "Nie można otworzyć portu COM." << std::endl;
+        return;
+    }
+
+    if(ConectedDevices[DEV_CONTROL_BOARD]) ConfigPort(hControlBoard);
+    if(ConectedDevices[DEV_TOP_BOARD]) ConfigPort(hTopBoard);
+
+    //Run Thread
+    if(ConectedDevices[DEV_CONTROL_BOARD])
+    {
+        readThreadControlBoard = std::thread(ReadPort, hControlBoard, ParserControlBoard);
+    }
+    if(ConectedDevices[DEV_TOP_BOARD])
+    {
+        readThreadTopBoard = std::thread(ReadPort, hTopBoard, ParserTopBoard);
+    }
 }
