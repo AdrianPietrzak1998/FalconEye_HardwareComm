@@ -5,6 +5,8 @@
 #include <fstream>
 #include <sstream>
 #include <handleapi.h>
+#include <mutex>
+#include <atomic>
 
 #define CONTROL_BOARD "control-"
 #define TOP_BOARD "top-"
@@ -12,10 +14,11 @@
 
 enum DevciceName{
 DEV_CONTROL_BOARD = 0,
-DEV_TOP_BOARD
+DEV_TOP_BOARD,
+DEV_QUANITY
 }DeviceName;
 
-uint8_t ConectedDevices[3];
+uint8_t ConectedDevices[DEV_QUANITY];
 
 char ControlBoardPort[25];
 char TopBoardPort[25];
@@ -35,9 +38,11 @@ void ParserTopBoard(char *buffer);
 void searchComPort(void);
 void OpenPorts(void);
 
-bool threadTerminate;
-bool readThreadTerminate;
-bool readThreadFault;
+//std::mutex mtx;
+volatile bool threadTerminate;
+volatile bool readThreadTerminate;
+volatile bool shared;
+
 
 struct ControlBoardReceivedVar{
     char Input[20];
@@ -91,6 +96,8 @@ struct TopBoardReceivedVar{
 
     std::thread readThreadControlBoard;
     std::thread readThreadTopBoard;
+
+    std::thread restartCom;
 
     void removeSubstring(std::string& str, const std::string& substr) {
     size_t pos = str.find(substr);
@@ -150,10 +157,10 @@ int main() {
 
     while(true)
     {
-        if(readThreadFault)
+        if(shared)
         {
-            OpenPorts();
-            readThreadFault = true;
+            std::cout<<"share"<<std::endl;
+            shared = false;
         }
 
         getline(std::cin, TerminalData);
@@ -163,6 +170,7 @@ int main() {
             threadTerminate = TRUE;
             break;
         }
+
         TerminalData += ENDLINE;
         if (TerminalData.find(CONTROL_BOARD) != std::string::npos)
         {
@@ -178,7 +186,13 @@ int main() {
             WritePort(hTopBoard, TerminalData);
             TerminalData.clear();
         }
-        else if (TerminalData.compare("refresh")) OpenPorts();
+        else if (TerminalData.compare("refresh"))
+        {
+            OpenPorts();
+        }
+
+        if(restartCom.joinable())restartCom.join();
+
 
         std::cin.clear();
 
@@ -231,12 +245,13 @@ void ReadPort(HANDLE hSerial, void(*ptrParser)(char*)) {
                 }
             }
         } else {
-            std::cout << "Błąd podczas odczytu z portu COM." << std::endl;
-            readThreadFault = true;
-            readThreadTerminate = true;
+            std::cout << "COM port read error" << std::endl;
+            if(!restartCom.joinable())restartCom = std::thread(OpenPorts);
             break;
         }
+
         if(threadTerminate || readThreadTerminate) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
 
@@ -245,7 +260,7 @@ void WritePort(HANDLE hSerial, std::string message) {
    // while (true) {
         DWORD bytesWritten;
         if (!WriteFile(hSerial, message.c_str(), message.length(), &bytesWritten, NULL)) {
-            std::cout << "Błąd podczas zapisu do portu COM." << std::endl;
+            std::cout << "COM port write error" << std::endl;
             //break;
         } else {
             //std::cout << "Zapisano " << bytesWritten << " bajtów do portu COM." << std::endl;
@@ -263,7 +278,7 @@ bool ConfigPort(HANDLE hSerial)
     dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
 
     if (!GetCommState(hSerial, &dcbSerialParams)) {
-        std::cout << "Błąd podczas pobierania ustawień portu COM." << std::endl;
+        std::cout << "COM port download settings error" << std::endl;
         CloseHandle(hSerial);
         return 1;
     }
@@ -274,7 +289,7 @@ bool ConfigPort(HANDLE hSerial)
     dcbSerialParams.StopBits = ONESTOPBIT;
 
     if (!SetCommState(hSerial, &dcbSerialParams)) {
-        std::cout << "Błąd podczas konfigurowania ustawień portu COM." << std::endl;
+        std::cout << "COM port config error" << std::endl;
         CloseHandle(hSerial);
         return 1;
     }
@@ -339,6 +354,7 @@ void WriteTxt(void)
         ControlBoardStream.clear();
 
         if(threadTerminate) break;
+
 
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
@@ -523,6 +539,11 @@ void OpenPorts(void)
 
     CloseHandle(hControlBoard);
     CloseHandle(hTopBoard);
+
+    for(int i=0 ; i<DEV_QUANITY; i++)
+    {
+        ConectedDevices[i] = 0;
+    }
 
     searchComPort();
 

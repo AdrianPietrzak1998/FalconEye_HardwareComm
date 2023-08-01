@@ -1,5 +1,5 @@
 # depslib dependency file v1.0
-1690848692 source:c:\users\adrian\documents\codeblocks\falconeyehardwarecomm\main.cpp
+1690900676 source:c:\users\adrian\documents\codeblocks\falconeyehardwarecomm\main.cpp
 	<iostream>
 	<string>
 	<thread>
@@ -7,4 +7,6 @@
 	<fstream>
 	<sstream>
 	<handleapi.h>
+	<mutex>
+	<atomic>
 
