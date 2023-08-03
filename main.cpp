@@ -7,6 +7,7 @@
 #include <handleapi.h>
 #include <mutex>
 #include <atomic>
+#include <Boot_lib.h>
 
 #define CONTROL_BOARD "control-"
 #define TOP_BOARD "top-"
@@ -15,6 +16,8 @@
 enum DevciceName{
 DEV_CONTROL_BOARD = 0,
 DEV_TOP_BOARD,
+DEV_CONTROL_BOARD_BOOT,
+DEV_TOP_BOARD_BOOT,
 DEV_QUANITY
 }DeviceName;
 
@@ -22,6 +25,8 @@ uint8_t ConectedDevices[DEV_QUANITY];
 
 char ControlBoardPort[25];
 char TopBoardPort[25];
+char ControlBoardPortBoot[25];
+char TopBoardPortBoot[25];
 
 uint8_t ArgumentQuanityControlBoard[] = {11, 8, 0, 0, 0, 0, 0, 0, 0, 0, 2};
 uint8_t ArgumentQuanityTopBoard[] = {7, 4, 0, 0, 0, 0, 0, 0, 0, 0, 2};
@@ -37,6 +42,7 @@ void ParserControlBoard(char *buffer);
 void ParserTopBoard(char *buffer);
 void searchComPort(void);
 void OpenPorts(void);
+void CloseReads(void);
 
 //std::mutex mtx;
 volatile bool threadTerminate;
@@ -175,15 +181,43 @@ int main() {
         if (TerminalData.find(CONTROL_BOARD) != std::string::npos)
         {
             removeSubstring(TerminalData, CONTROL_BOARD);
-            std::cout << TerminalData << std::endl;
-            WritePort(hControlBoard, TerminalData);
+            if(TerminalData.find("update") != std::string::npos)
+            {
+                if(ConectedDevices[DEV_CONTROL_BOARD])WritePort(hControlBoard, "08/1234^");
+                CloseReads();
+                Sleep(2000);
+                searchComPort();
+                if(ConectedDevices[DEV_CONTROL_BOARD_BOOT])Update(ControlBoardPortBoot, "Update/FalconEye ControlBoard.bin");
+                else std::cout << "Bootmode fault" << std::endl;
+                Sleep(2000);
+                OpenPorts();
+            }
+            else
+            {
+                std::cout << TerminalData << std::endl;
+                WritePort(hControlBoard, TerminalData);
+            }
             TerminalData.clear();
         }
         else if (TerminalData.find(TOP_BOARD) != std::string::npos)
         {
             removeSubstring(TerminalData, TOP_BOARD);
-            std::cout << TerminalData << std::endl;
-            WritePort(hTopBoard, TerminalData);
+            if(TerminalData.find("update") != std::string::npos)
+            {
+                if(ConectedDevices[DEV_TOP_BOARD])WritePort(hTopBoard, "07/1234^");
+                CloseReads();
+                Sleep(2000);
+                searchComPort();
+                if(ConectedDevices[DEV_TOP_BOARD_BOOT])Update(TopBoardPortBoot, "Update/FalconEye TopBoard.bin");
+                else std::cout << "Bootmode fault" << std::endl;
+                Sleep(2000);
+                OpenPorts();
+            }
+            else
+            {
+                std::cout << TerminalData << std::endl;
+                WritePort(hTopBoard, TerminalData);
+            }
             TerminalData.clear();
         }
         else if (TerminalData.compare("refresh"))
@@ -205,6 +239,7 @@ int main() {
     // Zakończenie wątków
     if(readThreadControlBoard.joinable()) readThreadControlBoard.join();
     if(readThreadTopBoard.joinable()) readThreadTopBoard.join();
+    if(restartCom.joinable())restartCom.join();
     //writeThread.join();
     writeTxtThread.join();
 
@@ -249,9 +284,8 @@ void ReadPort(HANDLE hSerial, void(*ptrParser)(char*)) {
             if(!restartCom.joinable())restartCom = std::thread(OpenPorts);
             break;
         }
-
-        if(threadTerminate || readThreadTerminate) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if(threadTerminate || readThreadTerminate) break;
     }
 }
 
@@ -500,7 +534,29 @@ void searchComPort()
         std::string line;
         while (std::getline(comFile, line))
         {
-            if (line.find("FalconEye ControlBoard") != std::string::npos)
+            if (line.find("FalconEye ControlBoard_Boot") != std::string::npos)
+            {
+                ConectedDevices[DEV_CONTROL_BOARD_BOOT] = 1;
+                std::string comPort = getComPort(line);
+                if (!comPort.empty())
+                {
+                    strcpy(ControlBoardPortBoot, comPort.c_str());
+                    ModifyPortFormat(ControlBoardPortBoot);
+                    std::cout << "FalconEye ControlBoard_Boot znaleziony na porcie: " << comPort << std::endl;
+                }
+            }
+            else if (line.find("FalconEye TopBoard_Boot") != std::string::npos)
+            {
+                ConectedDevices[DEV_TOP_BOARD_BOOT] = 1;
+                std::string comPort = getComPort(line);
+                if (!comPort.empty())
+                {
+                    strcpy(TopBoardPortBoot, comPort.c_str());
+                    ModifyPortFormat(TopBoardPortBoot);
+                    std::cout << "FalconEye TopBoard_Boot znaleziony na porcie: " << comPort << std::endl;
+                }
+            }
+            else if (line.find("FalconEye ControlBoard") != std::string::npos)
             {
                 ConectedDevices[DEV_CONTROL_BOARD] = 1;
                 std::string comPort = getComPort(line);
@@ -509,7 +565,6 @@ void searchComPort()
                     strcpy(ControlBoardPort, comPort.c_str());
                     ModifyPortFormat(ControlBoardPort);
                     std::cout << "FalconEye ControlBoard znaleziony na porcie: " << comPort << std::endl;
-                    // Kontynuuj przetwarzanie pozostałych informacji
                 }
             }
             else if (line.find("FalconEye TopBoard") != std::string::npos)
@@ -521,7 +576,6 @@ void searchComPort()
                     strcpy(TopBoardPort, comPort.c_str());
                     ModifyPortFormat(TopBoardPort);
                     std::cout << "FalconEye TopBoard znaleziony na porcie: " << comPort << std::endl;
-                    // Kontynuuj przetwarzanie pozostałych informacji
                 }
             }
         }
@@ -571,4 +625,23 @@ void OpenPorts(void)
     {
         readThreadTopBoard = std::thread(ReadPort, hTopBoard, ParserTopBoard);
     }
+}
+
+void CloseReads(void)
+{
+        //Terminate thread
+    readThreadTerminate = true;
+
+    if(readThreadControlBoard.joinable()) readThreadControlBoard.join();
+    if(readThreadTopBoard.joinable()) readThreadTopBoard.join();
+    readThreadTerminate = false;
+
+    CloseHandle(hControlBoard);
+    CloseHandle(hTopBoard);
+
+    for(int i=0 ; i<DEV_QUANITY; i++)
+    {
+        ConectedDevices[i] = 0;
+    }
+
 }
