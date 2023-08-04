@@ -5,6 +5,7 @@
 #include <sstream>
 #include <handleapi.h>
 #include <chrono>
+#include <iomanip>
 #include <Boot_lib.h>
 
 
@@ -85,13 +86,15 @@ union data {
 
     binaryFile.read(reinterpret_cast<char*>(data.data8), sizeof(data.data8));
 
-    uint32_t binary_size = binaryFile.gcount();
+    uint32_t binary_size = binaryFile.gcount() - 4;
+    binaryFile.close();
     uint16_t packet_quanity = (binary_size%PACKET_SIZE_CONST)? binary_size / PACKET_SIZE_CONST + 1 : binary_size / PACKET_SIZE_CONST;
-    uint32_t binary_crc = calculate_crc32(data.data32, binary_size/4);
+    //uint32_t binary_crc = calculate_crc32(data.data32, binary_size/4);
+    uint32_t binary_crc = data.data32[binary_size/4];
 
-    std::cout <<  "Size: " << binary_size << std::endl;
+    std::cout <<  "Size: "<< std::fixed << std::setprecision(2) << static_cast<double>(binary_size)/1024 << "kB" << std::endl;
     std::cout << "Pakietow: " << packet_quanity << std::endl;
-    std::cout << "CRC: " << binary_crc << std::endl << std::endl << std::endl;
+    std::cout << "CRC: 0x" << std::hex << binary_crc << std::dec << std::endl << std::endl << std::endl;
 
     SendCommandToBootloader(ECHO, 0, hBootloader);
     SendCommandToBootloader(FULL_SIZE, binary_size, hBootloader);
@@ -131,7 +134,7 @@ union data {
         ///PacketDone
         ///
         ByteToSend -= ActualPacketSize;
-        std::cout << std::dec << "Wyslano: " << ActualPacketSize << " B | Pod adres: 0x" << std::hex << ActualAddress << " | Zostalo: " << std::dec << ByteToSend << " B | CRC: 0x" << std::hex << ActualPacketCRC <<std::endl;
+        std::cout << std::dec << "Wyslano: " << ActualPacketSize << " B | Pod adres: 0x" << std::hex << ActualAddress << " | Zostalo: " << std::dec << ByteToSend << " B | CRC: 0x" << std::hex << ActualPacketCRC << std::dec <<std::endl;
         ActualAddress += ActualPacketSize;
 
 
