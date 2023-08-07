@@ -8,6 +8,7 @@
 #include <mutex>
 #include <atomic>
 #include <Boot_lib.h>
+#include <vector>
 
 #define CONTROL_BOARD "control-"
 #define TOP_BOARD "top-"
@@ -22,14 +23,15 @@ DEV_QUANITY
 }DeviceName;
 
 uint8_t ConectedDevices[DEV_QUANITY];
+uint8_t PortIsOpen[DEV_QUANITY];
 
 char ControlBoardPort[25];
 char TopBoardPort[25];
 char ControlBoardPortBoot[25];
 char TopBoardPortBoot[25];
 
-uint8_t ArgumentQuanityControlBoard[] = {11, 8, 0, 0, 0, 0, 0, 0, 0, 0, 2};
-uint8_t ArgumentQuanityTopBoard[] = {7, 4, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+const uint8_t ArgumentQuanityControlBoard[] = {11, 8, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+const uint8_t ArgumentQuanityTopBoard[] = {7, 4, 0, 0, 0, 0, 0, 0, 0, 0, 2};
 
 std::string TerminalData;
 
@@ -122,10 +124,12 @@ int main() {
         std::cout << "Nie można otworzyć portu COM ControlBoard." << std::endl;
         //return 1;
     }
+    else PortIsOpen[DEV_CONTROL_BOARD] = 1;
        if (hTopBoard == INVALID_HANDLE_VALUE && ConectedDevices[DEV_TOP_BOARD]) {
         std::cout << "Nie można otworzyć portu COM TopBoard." << std::endl;
         //return 1;
     }
+    else PortIsOpen[DEV_TOP_BOARD] = 1;
 
     if(ConectedDevices[DEV_CONTROL_BOARD])ConfigPort(hControlBoard);
     if(ConectedDevices[DEV_TOP_BOARD])ConfigPort(hTopBoard);
@@ -187,7 +191,7 @@ int main() {
                 CloseReads();
                 Sleep(2000);
                 searchComPort();
-                if(ConectedDevices[DEV_CONTROL_BOARD_BOOT])Update(ControlBoardPortBoot, "Update/FalconEye ControlBoard.bin");
+                if(ConectedDevices[DEV_CONTROL_BOARD_BOOT])Update(hControlBoard, ControlBoardPortBoot, "Update/FalconEye ControlBoard_update.bin");
                 else std::cout << "Bootmode fault" << std::endl;
                 Sleep(2000);
                 OpenPorts();
@@ -208,7 +212,7 @@ int main() {
                 CloseReads();
                 Sleep(2000);
                 searchComPort();
-                if(ConectedDevices[DEV_TOP_BOARD_BOOT])Update(TopBoardPortBoot, "Update/FalconEye TopBoard.bin");
+                if(ConectedDevices[DEV_TOP_BOARD_BOOT])Update(hTopBoard, TopBoardPortBoot, "Update/FalconEye TopBoard_update.bin");
                 else std::cout << "Bootmode fault" << std::endl;
                 Sleep(2000);
                 OpenPorts();
@@ -253,41 +257,35 @@ int main() {
 void ReadPort(HANDLE hSerial, void(*ptrParser)(char*)) {
     std::string receivedMessage;
 
-    while (true) {
-        char buffer[512];
+    while (!threadTerminate && !readThreadTerminate) {
+        char currentChar;
         DWORD bytesRead;
 
-        if (ReadFile(hSerial, buffer, sizeof(buffer), &bytesRead, NULL)) {
+        if (ReadFile(hSerial, &currentChar, sizeof(currentChar), &bytesRead, NULL)) {
             if (bytesRead > 0) {
-
-                for (DWORD i = 0; i < bytesRead; i++) {
-                    char currentChar = buffer[i];
-
-                    if (currentChar == ENDLINE) {
-                        // Znaleziono koniec wiadomości, przetwarzanie odczytanej wiadomości
-                        //std::cout << "Odczytano: " << receivedMessage << std::endl;
-                        char Msg[receivedMessage.size() + 1];
-                        strcpy(Msg, receivedMessage.c_str());
-
-                                ptrParser(Msg);
-
-
-                        receivedMessage.clear();
-                    } else {
-                        // Dodanie znaku do odczytanej wiadomości
-                        receivedMessage += currentChar;
-                    }
+                if (currentChar == ENDLINE) {
+                    // Znaleziono koniec wiadomości, przetwarzanie odczytanej wiadomości
+                    char Msg[1024];
+                    strcpy(Msg, receivedMessage.c_str());
+                    ptrParser(Msg);
+                    receivedMessage.clear();
+                } else {
+                    // Dodanie znaku do odczytanej wiadomości
+                    receivedMessage += currentChar;
                 }
             }
         } else {
             std::cout << "COM port read error" << std::endl;
-            if(!restartCom.joinable())restartCom = std::thread(OpenPorts);
+            if (!restartCom.joinable()) {
+                restartCom = std::thread(OpenPorts);
+            }
             break;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        if(threadTerminate || readThreadTerminate) break;
     }
 }
+
+
+
 
 void WritePort(HANDLE hSerial, std::string message) {
     //std::string message = "2/3^";
@@ -337,9 +335,23 @@ void WriteTxt(void)
         //printf("001/%s/%s/%s/%s/%s/%s\n", ControlBoardReceivedVar.LightMode, ControlBoardReceivedVar.LightPwm, ControlBoardReceivedVar.LightDimm, ControlBoardReceivedVar.LogoMode, ControlBoardReceivedVar.LogoPwm, ControlBoardReceivedVar.LogoDimm);
         //printf("010/%s\n", ControlBoardReceivedVar.uId);
 
+        std::string ControlState;
+        if(ConectedDevices[DEV_CONTROL_BOARD]) ControlState = "CONNECT";
+        else if(ConectedDevices[DEV_CONTROL_BOARD_BOOT]) ControlState = "BOOT";
+        else ControlState = "DISCONNECT";
+
+        std::string TopState;
+        if(ConectedDevices[DEV_TOP_BOARD]) TopState = "CONNECT";
+        else if(ConectedDevices[DEV_TOP_BOARD_BOOT]) TopState = "BOOT";
+        else TopState = "DISCONNECT";
+
         std::ofstream OutFile;
         std::ostringstream ControlBoardStream;
-                  ControlBoardStream << "----ControlBoard " << ControlBoardReceivedVar.uId << "----" << std::endl
+                  ControlBoardStream << "----Device connected----" << std::endl
+                    << "Control: " << ControlState <<std::endl
+                    << "Top: " << TopState << std::endl
+                    << "Printer: " << std::endl
+                    << "----ControlBoard " << ControlBoardReceivedVar.uId << "----" << std::endl
                     << "Version" << ControlBoardReceivedVar.Version << std::endl
                     << "Input: " << ControlBoardReceivedVar.Input << std::endl
                     << "Output: " << ControlBoardReceivedVar.Output << std::endl
@@ -394,83 +406,115 @@ void WriteTxt(void)
     }
 }
 
-void ParserControlBoard(char *buffer)
-{
-    char * ParsePointer = strtok(buffer, "/");
+void ParserControlBoard(char *buffer) {
+    char *ParsePointer = buffer;
     uint8_t CommandID = atoi(ParsePointer);
-    char tmpCommandArgument[20][30]; //20 command arg 30 char
+    char tmpCommandArgument[20][40]; // 20 command arg 30 char
 
-    for(uint8_t i = 0; i < ArgumentQuanityControlBoard[CommandID]; i++)
-    {
-        char * ParsePointer = strtok(NULL, "/");
-        sprintf(&tmpCommandArgument[i][0], "%s", ParsePointer);
+    std::vector<std::string> parsedArgs; // Przechowuje sparsowane argumenty
+
+    for (uint8_t i = 0; i < ArgumentQuanityControlBoard[CommandID]; i++) {
+        ParsePointer = strchr(ParsePointer, '/');
+        if (!ParsePointer) {
+            break;
+        }
+        ParsePointer++; // Przesunięcie wskaźnika za znak '/'
+        char *nextSeparator = strchr(ParsePointer, '/');
+        if (!nextSeparator) {
+            nextSeparator = strchr(ParsePointer, '\0');
+        }
+        size_t argLength = nextSeparator - ParsePointer;
+        std::string arg(ParsePointer, argLength);
+        parsedArgs.emplace_back(arg);
+        ParsePointer = nextSeparator;
     }
-    switch(CommandID)
-    {
-    case 0:
-        strcpy(ControlBoardReceivedVar.Input, &tmpCommandArgument[0][0]);
-        strcpy(ControlBoardReceivedVar.Output, &tmpCommandArgument[1][0]);
-        strcpy(ControlBoardReceivedVar.Pwm1, &tmpCommandArgument[2][0]);
-        strcpy(ControlBoardReceivedVar.Pwm2, &tmpCommandArgument[3][0]);
-        strcpy(ControlBoardReceivedVar.Pwm3, &tmpCommandArgument[4][0]);
-        strcpy(ControlBoardReceivedVar.Pwm4, &tmpCommandArgument[5][0]);
-        strcpy(ControlBoardReceivedVar.Temp, &tmpCommandArgument[6][0]);
-        strcpy(ControlBoardReceivedVar.McuTemp, &tmpCommandArgument[7][0]);
-        strcpy(ControlBoardReceivedVar.Volt12, &tmpCommandArgument[8][0]);
-        strcpy(ControlBoardReceivedVar.Volt5, &tmpCommandArgument[9][0]);
-        strcpy(ControlBoardReceivedVar.Curr, &tmpCommandArgument[10][0]);
 
+    switch (CommandID) {
+    case 0:
+        if (parsedArgs.size() >= 11) {
+            strcpy(ControlBoardReceivedVar.Input, parsedArgs[0].c_str());
+            strcpy(ControlBoardReceivedVar.Output, parsedArgs[1].c_str());
+            strcpy(ControlBoardReceivedVar.Pwm1, parsedArgs[2].c_str());
+            strcpy(ControlBoardReceivedVar.Pwm2, parsedArgs[3].c_str());
+            strcpy(ControlBoardReceivedVar.Pwm3, parsedArgs[4].c_str());
+            strcpy(ControlBoardReceivedVar.Pwm4, parsedArgs[5].c_str());
+            strcpy(ControlBoardReceivedVar.Temp, parsedArgs[6].c_str());
+            strcpy(ControlBoardReceivedVar.McuTemp, parsedArgs[7].c_str());
+            strcpy(ControlBoardReceivedVar.Volt12, parsedArgs[8].c_str());
+            strcpy(ControlBoardReceivedVar.Volt5, parsedArgs[9].c_str());
+            strcpy(ControlBoardReceivedVar.Curr, parsedArgs[10].c_str());
+        }
         break;
     case 1:
-        strcpy(ControlBoardReceivedVar.LightMode, &tmpCommandArgument[0][0]);
-        strcpy(ControlBoardReceivedVar.LightPwm, &tmpCommandArgument[1][0]);
-        strcpy(ControlBoardReceivedVar.LightDimm, &tmpCommandArgument[2][0]);
-        strcpy(ControlBoardReceivedVar.LogoMode, &tmpCommandArgument[3][0]);
-        strcpy(ControlBoardReceivedVar.LogoPwm, &tmpCommandArgument[4][0]);
-        strcpy(ControlBoardReceivedVar.LogoDimm, &tmpCommandArgument[5][0]);
-        strcpy(ControlBoardReceivedVar.ErrorCode, &tmpCommandArgument[6][0]);
-        strcpy(ControlBoardReceivedVar.DoorOpen, &tmpCommandArgument[7][0]);
+        if (parsedArgs.size() >= 8) {
+            strcpy(ControlBoardReceivedVar.LightMode, parsedArgs[0].c_str());
+            strcpy(ControlBoardReceivedVar.LightPwm, parsedArgs[1].c_str());
+            strcpy(ControlBoardReceivedVar.LightDimm, parsedArgs[2].c_str());
+            strcpy(ControlBoardReceivedVar.LogoMode, parsedArgs[3].c_str());
+            strcpy(ControlBoardReceivedVar.LogoPwm, parsedArgs[4].c_str());
+            strcpy(ControlBoardReceivedVar.LogoDimm, parsedArgs[5].c_str());
+            strcpy(ControlBoardReceivedVar.ErrorCode, parsedArgs[6].c_str());
+            strcpy(ControlBoardReceivedVar.DoorOpen, parsedArgs[7].c_str());
+        }
         break;
     case 10:
-        strcpy(ControlBoardReceivedVar.uId, &tmpCommandArgument[0][0]);
-        strcpy(ControlBoardReceivedVar.Version, &tmpCommandArgument[1][0]);
+        if (parsedArgs.size() >= 2) {
+            strcpy(ControlBoardReceivedVar.uId, parsedArgs[0].c_str());
+            strcpy(ControlBoardReceivedVar.Version, parsedArgs[1].c_str());
+        }
         break;
     }
 }
-
-void ParserTopBoard(char *buffer)
-{
-    char * ParsePointer = strtok(buffer, "/");
+void ParserTopBoard(char *buffer) {
+    char *ParsePointer = buffer;
     uint8_t CommandID = atoi(ParsePointer);
-    char tmpCommandArgument[20][30]; //20 command arg 30 char
+    char tmpCommandArgument[20][30]; // 20 command arg 30 char
 
-    for(uint8_t i = 0; i < ArgumentQuanityControlBoard[CommandID]; i++)
-    {
-        char * ParsePointer = strtok(NULL, "/");
-        sprintf(&tmpCommandArgument[i][0], "%s", ParsePointer);
+    std::vector<std::string> parsedArgs; // Przechowuje sparsowane argumenty
+
+    for (uint8_t i = 0; i < ArgumentQuanityTopBoard[CommandID]; i++) {
+        ParsePointer = strchr(ParsePointer, '/');
+        if (!ParsePointer) {
+            break;
+        }
+        ParsePointer++; // Przesunięcie wskaźnika za znak '/'
+        char *nextSeparator = strchr(ParsePointer, '/');
+        if (!nextSeparator) {
+            nextSeparator = strchr(ParsePointer, '\0');
+        }
+        size_t argLength = nextSeparator - ParsePointer;
+        std::string arg(ParsePointer, argLength);
+        parsedArgs.emplace_back(arg);
+        ParsePointer = nextSeparator;
     }
-    switch(CommandID)
-    {
+
+    switch (CommandID) {
     case 0:
-        strcpy(TopBoardReceivedVar.hLed, &tmpCommandArgument[0][0]);
-        strcpy(TopBoardReceivedVar.sLed, &tmpCommandArgument[1][0]);
-        strcpy(TopBoardReceivedVar.vLed, &tmpCommandArgument[2][0]);
-        strcpy(TopBoardReceivedVar.modeLed, &tmpCommandArgument[3][0]);
-        strcpy(TopBoardReceivedVar.fxDelayLed, &tmpCommandArgument[4][0]);
-        strcpy(TopBoardReceivedVar.blinkDelayLed, &tmpCommandArgument[5][0]);
-        strcpy(TopBoardReceivedVar.reverseDirLed, &tmpCommandArgument[6][0]);
-        strcpy(TopBoardReceivedVar.gammaLed, &tmpCommandArgument[7][0]);
+        if (parsedArgs.size() >= 8) {
+            strcpy(TopBoardReceivedVar.hLed, parsedArgs[0].c_str());
+            strcpy(TopBoardReceivedVar.sLed, parsedArgs[1].c_str());
+            strcpy(TopBoardReceivedVar.vLed, parsedArgs[2].c_str());
+            strcpy(TopBoardReceivedVar.modeLed, parsedArgs[3].c_str());
+            strcpy(TopBoardReceivedVar.fxDelayLed, parsedArgs[4].c_str());
+            strcpy(TopBoardReceivedVar.blinkDelayLed, parsedArgs[5].c_str());
+            strcpy(TopBoardReceivedVar.reverseDirLed, parsedArgs[6].c_str());
+            strcpy(TopBoardReceivedVar.gammaLed, parsedArgs[7].c_str());
+        }
         break;
     case 1:
-        strcpy(TopBoardReceivedVar.Temperature, &tmpCommandArgument[0][0]);
-        strcpy(TopBoardReceivedVar.FanPWM, &tmpCommandArgument[1][0]);
-        strcpy(TopBoardReceivedVar.FanSpeed, &tmpCommandArgument[2][0]);
-        strcpy(TopBoardReceivedVar.CaseOpen, &tmpCommandArgument[3][0]);
-        strcpy(TopBoardReceivedVar.ErrorCode, &tmpCommandArgument[4][0]);
+        if (parsedArgs.size() >= 5) {
+            strcpy(TopBoardReceivedVar.Temperature, parsedArgs[0].c_str());
+            strcpy(TopBoardReceivedVar.FanPWM, parsedArgs[1].c_str());
+            strcpy(TopBoardReceivedVar.FanSpeed, parsedArgs[2].c_str());
+            strcpy(TopBoardReceivedVar.CaseOpen, parsedArgs[3].c_str());
+            strcpy(TopBoardReceivedVar.ErrorCode, parsedArgs[4].c_str());
+        }
         break;
     case 10:
-        strcpy(TopBoardReceivedVar.uId, &tmpCommandArgument[0][0]);
-        strcpy(TopBoardReceivedVar.Version, &tmpCommandArgument[1][0]);
+        if (parsedArgs.size() >= 2) {
+            strcpy(TopBoardReceivedVar.uId, parsedArgs[0].c_str());
+            strcpy(TopBoardReceivedVar.Version, parsedArgs[1].c_str());
+        }
         break;
     }
 }
@@ -589,34 +633,52 @@ void OpenPorts(void)
 
     if(readThreadControlBoard.joinable()) readThreadControlBoard.join();
     if(readThreadTopBoard.joinable()) readThreadTopBoard.join();
-    readThreadTerminate = false;
 
-    CloseHandle(hControlBoard);
-    CloseHandle(hTopBoard);
+    if (PortIsOpen[DEV_CONTROL_BOARD])
+    {
+        CloseHandle(hControlBoard);
+        PortIsOpen[DEV_CONTROL_BOARD] = 0;
+    }
+    if (PortIsOpen[DEV_TOP_BOARD])
+    {
+        CloseHandle(hTopBoard);
+        PortIsOpen[DEV_TOP_BOARD] = 0;
+    }
+
 
     for(int i=0 ; i<DEV_QUANITY; i++)
     {
         ConectedDevices[i] = 0;
     }
 
+
     searchComPort();
 
     if(ConectedDevices[DEV_CONTROL_BOARD]) hControlBoard = CreateFile(ControlBoardPort, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hControlBoard == INVALID_HANDLE_VALUE && ConectedDevices[DEV_CONTROL_BOARD]) {
         std::cout << "Nie można otworzyć portu COM." << std::endl;
+        ConectedDevices[DEV_CONTROL_BOARD] = 0;
         return;
     }
+    else PortIsOpen[DEV_CONTROL_BOARD] = 1;
 
     if(ConectedDevices[DEV_TOP_BOARD]) hTopBoard = CreateFile(TopBoardPort, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hTopBoard == INVALID_HANDLE_VALUE && ConectedDevices[DEV_TOP_BOARD]) {
         std::cout << "Nie można otworzyć portu COM." << std::endl;
+        ConectedDevices[DEV_TOP_BOARD] = 0;
         return;
     }
+    else PortIsOpen[DEV_TOP_BOARD] = 1;
 
     if(ConectedDevices[DEV_CONTROL_BOARD]) ConfigPort(hControlBoard);
     if(ConectedDevices[DEV_TOP_BOARD]) ConfigPort(hTopBoard);
 
     //Run Thread
+
+    readThreadTerminate = false;
+
+
+
     if(ConectedDevices[DEV_CONTROL_BOARD])
     {
         readThreadControlBoard = std::thread(ReadPort, hControlBoard, ParserControlBoard);
@@ -632,16 +694,27 @@ void CloseReads(void)
         //Terminate thread
     readThreadTerminate = true;
 
+
+
     if(readThreadControlBoard.joinable()) readThreadControlBoard.join();
     if(readThreadTopBoard.joinable()) readThreadTopBoard.join();
-    readThreadTerminate = false;
 
-    CloseHandle(hControlBoard);
-    CloseHandle(hTopBoard);
+    if (PortIsOpen[DEV_CONTROL_BOARD])
+    {
+        CloseHandle(hControlBoard);
+        PortIsOpen[DEV_CONTROL_BOARD] = 0;
+    }
+    if (PortIsOpen[DEV_TOP_BOARD])
+    {
+        CloseHandle(hTopBoard);
+        PortIsOpen[DEV_TOP_BOARD] = 0;
+    }
 
     for(int i=0 ; i<DEV_QUANITY; i++)
     {
         ConectedDevices[i] = 0;
     }
+
+    readThreadTerminate = false;
 
 }

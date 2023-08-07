@@ -40,9 +40,9 @@ static bool ConfigPort(HANDLE hSerial)
 
 
 
-void Update(char *ComPortName, std::string FileName)
+void Update(HANDLE hBootloader, char *ComPortName, std::string FileName)
 {
-    HANDLE hBootloader;
+    //HANDLE hBootloader;
 
     enum Step{
 	ECHO = 0x00,
@@ -58,8 +58,8 @@ void Update(char *ComPortName, std::string FileName)
 }BootStep;
 
 union data {
-    uint32_t data32[1024 * 1024 / 4];
-    uint8_t data8[1024 * 1024];
+    uint32_t data32[1024 * ((1024 / 4) + 1)];
+    uint8_t data8[1024 * 1024 + 4];
 }data;
 
 
@@ -75,7 +75,7 @@ union data {
         std::cout<<"Otwarto port com" << std::endl;
     }
 
-    ConfigPort(hBootloader);
+    //ConfigPort(hBootloader);
 
     std::ifstream binaryFile(FileName, std::ios::binary);
     if(!binaryFile)
@@ -150,6 +150,7 @@ union data {
            std::cout<<"Ended ";
         }
     CloseHandle(hBootloader);
+    hBootloader = NULL;
     std::cout << "DONE!" << std::endl;
 }
 
@@ -283,5 +284,8 @@ uint32_t calculate_crc32(uint32_t* data, size_t length) {
 
     return crc;
 }
+
+
+
 
 
