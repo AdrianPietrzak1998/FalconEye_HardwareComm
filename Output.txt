@@ -2,18 +2,18 @@
 Control: CONNECT
 Top: CONNECT
 Printer: 
-----ControlBoard ----
-Version
+----ControlBoard 0x43015624395942305d1ff39----
+Version1.0
 Input: 0
 Output: 0
 Pwm1: 0
 Pwm2: 0
 Pwm3: 0
 Pwm4: 0
-Temperature: 25.75
+Temperature: 27.25
 MCU Temperature: 24.98
-12V: 0.00
-5V: 4.81
+12V: 11.99
+5V: 4.78
 Current: 0.00
 Light mode:0
 Light pwm: 1000
@@ -25,16 +25,16 @@ Door is open: 0
 Error code: 0
 ----TopBoard 0x3230303030301623a060f00----
 Version1.0
-H led value: 
-S led value: 
-V led value: 
-Mode Led: 
-Fx delay led: 
-Blink delay led: 
-Reverse fx enabled: 
-Gamma corection enabled: 
-Temperature: 
-Fan PWM: 
-Fan speed: 
-Case open: 
-Error code: 
+H led value: 210
+S led value: 200
+V led value: 255
+Mode Led: 2
+Fx delay led: 30
+Blink delay led: 100
+Reverse fx enabled: 1
+Gamma corection enabled: 1
+Temperature: 27.00
+Fan PWM: 0
+Fan speed: 0
+Case open: 0
+Error code: 0

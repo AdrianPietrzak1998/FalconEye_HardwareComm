@@ -31,7 +31,7 @@ char ControlBoardPortBoot[25];
 char TopBoardPortBoot[25];
 
 const uint8_t ArgumentQuanityControlBoard[] = {11, 8, 0, 0, 0, 0, 0, 0, 0, 0, 2};
-const uint8_t ArgumentQuanityTopBoard[] = {7, 4, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+const uint8_t ArgumentQuanityTopBoard[] = {8, 5, 0, 0, 0, 0, 0, 0, 0, 0, 2};
 
 std::string TerminalData;
 
@@ -517,6 +517,7 @@ void ParserTopBoard(char *buffer) {
         }
         break;
     }
+    parsedArgs.clear();
 }
 
 
