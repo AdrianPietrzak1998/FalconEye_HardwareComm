@@ -9,6 +9,8 @@
 #include <atomic>
 #include <Boot_lib.h>
 #include <vector>
+#include <chrono>
+#include <filesystem>
 
 #define CONTROL_BOARD "control-"
 #define TOP_BOARD "top-"
@@ -33,6 +35,8 @@ char TopBoardPortBoot[25];
 const uint8_t ArgumentQuanityControlBoard[] = {11, 8, 0, 0, 0, 0, 0, 0, 0, 0, 2};
 const uint8_t ArgumentQuanityTopBoard[] = {8, 5, 0, 0, 0, 0, 0, 0, 0, 0, 2};
 
+bool ExitVar = false;
+
 std::string TerminalData;
 
 
@@ -45,6 +49,8 @@ void ParserTopBoard(char *buffer);
 void searchComPort(void);
 void OpenPorts(void);
 void CloseReads(void);
+void TerminalDataParser(std::string TerminalData);
+void ReadCommand(void);
 
 //std::mutex mtx;
 volatile bool threadTerminate;
@@ -134,20 +140,7 @@ int main() {
     if(ConectedDevices[DEV_CONTROL_BOARD])ConfigPort(hControlBoard);
     if(ConectedDevices[DEV_TOP_BOARD])ConfigPort(hTopBoard);
 
-    // Uruchomienie wątku do odczytu z portu COM
-   // std::thread readThread(ReadPort, hControlBoard);
 
-/*
-   std::thread readThreadControlBoard([](HANDLE handle, void(*func)(char*)) {
-    ReadPort(handle, func);
-}, hControlBoard, ParserControlBoard);
-
-
-
-   std::thread readThreadTopBoard([](HANDLE handle, void(*func)(char*)) {
-    ReadPort(handle, func);
-}, hTopBoard, ParserTopBoard);
-*/
 
      if(ConectedDevices[DEV_CONTROL_BOARD])
      {
@@ -159,13 +152,13 @@ int main() {
      }
 
 
-    // Uruchomienie wątku do zapisu do portu COM
-    //std::thread writeThread(WritePort, hControlBoard);
 
     // Uruchomienie watku do zapisu zmiennych do pliku
     std::thread writeTxtThread(WriteTxt);
+    std::thread ReadCommandThread(ReadCommand);
 
-    while(true)
+
+    while(ExitVar == false)
     {
         if(shared)
         {
@@ -174,11 +167,44 @@ int main() {
         }
 
         getline(std::cin, TerminalData);
+
+        TerminalDataParser(TerminalData);
+
+        if(restartCom.joinable())restartCom.join();
+
+
+        std::cin.clear();
+
+
+    }
+
+    // Oczekiwanie na wciśnięcie klawisza Enter
+   // std::cin.ignore();
+
+    // Zakończenie wątków
+    if(readThreadControlBoard.joinable()) readThreadControlBoard.join();
+    if(readThreadTopBoard.joinable()) readThreadTopBoard.join();
+    if(restartCom.joinable())restartCom.join();
+    //writeThread.join();
+    writeTxtThread.join();
+    ReadCommandThread.join();
+
+    // Zamknięcie portu COM
+    CloseHandle(hControlBoard);
+    CloseHandle(hTopBoard);
+
+    return 0;
+}
+
+void TerminalDataParser(std::string TerminalData)
+{
+
         if(!TerminalData.compare("exit"))
         {
             std::cout << "exit" << std::endl;
             threadTerminate = TRUE;
-            break;
+            ExitVar = true;
+            return;
         }
 
         TerminalData += ENDLINE;
@@ -228,30 +254,45 @@ int main() {
         {
             OpenPorts();
         }
+        return;
+}
 
-        if(restartCom.joinable())restartCom.join();
+void ReadCommand(void)
+{
+    std::filesystem::file_time_type Time;
+    while(true)
+    {
+        if(std::filesystem::last_write_time("Input.txt") != Time)
+        {
+            std::ifstream file("Input.txt");
+            if (file.peek() != std::ifstream::traits_type::eof())
+            {
+                std::string Line;
+                if(!file.is_open())
+                {
+                    std::cout << "Error open file" << std::endl;
+                    return;
+                }
+                while(getline(file, Line))
+                {
+                    TerminalDataParser(Line);
+                }
+                file.close();
+                std::ofstream clrFile("Input.txt");
+                if(!clrFile.is_open())
+                {
+                    std::cout << "Error clear file" << std::endl;
+                    return;
+                }
+                clrFile.close();
+            }
+            Time = std::filesystem::last_write_time("Input.txt");
 
+        }
 
-        std::cin.clear();
-
-
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        if(threadTerminate) break;
     }
-
-    // Oczekiwanie na wciśnięcie klawisza Enter
-   // std::cin.ignore();
-
-    // Zakończenie wątków
-    if(readThreadControlBoard.joinable()) readThreadControlBoard.join();
-    if(readThreadTopBoard.joinable()) readThreadTopBoard.join();
-    if(restartCom.joinable())restartCom.join();
-    //writeThread.join();
-    writeTxtThread.join();
-
-    // Zamknięcie portu COM
-    CloseHandle(hControlBoard);
-    CloseHandle(hTopBoard);
-
-    return 0;
 }
 
 void ReadPort(HANDLE hSerial, void(*ptrParser)(char*)) {

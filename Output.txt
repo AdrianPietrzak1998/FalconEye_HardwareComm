@@ -10,10 +10,10 @@ Pwm1: 0
 Pwm2: 0
 Pwm3: 0
 Pwm4: 0
-Temperature: 27.25
+Temperature: 29.75
 MCU Temperature: 24.98
-12V: 11.99
-5V: 4.78
+12V: 0.00
+5V: 4.76
 Current: 0.00
 Light mode:0
 Light pwm: 1000
@@ -33,7 +33,7 @@ Fx delay led: 30
 Blink delay led: 100
 Reverse fx enabled: 1
 Gamma corection enabled: 1
-Temperature: 27.00
+Temperature: 28.00
 Fan PWM: 0
 Fan speed: 0
 Case open: 0
