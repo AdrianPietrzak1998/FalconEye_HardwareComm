@@ -2,18 +2,18 @@
 Control: CONNECT
 Top: CONNECT
 Printer: 
-----ControlBoard 0x43015624395942305d1ff39----
-Version1.0
+----ControlBoard ----
+Version
 Input: 0
 Output: 0
 Pwm1: 0
 Pwm2: 0
 Pwm3: 0
 Pwm4: 0
-Temperature: 29.75
+Temperature: 29.68
 MCU Temperature: 24.98
 12V: 0.00
-5V: 4.76
+5V: 4.78
 Current: 0.00
 Light mode:0
 Light pwm: 1000
@@ -23,8 +23,8 @@ Logo pwm: 1000
 Logo dimmer time: 2
 Door is open: 0
 Error code: 0
-----TopBoard 0x3230303030301623a060f00----
-Version1.0
+----TopBoard ----
+Version
 H led value: 210
 S led value: 200
 V led value: 255

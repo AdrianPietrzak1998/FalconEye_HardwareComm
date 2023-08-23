@@ -121,6 +121,8 @@ struct TopBoardReceivedVar{
 }
 
 int main() {
+    SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED);
+
     searchComPort();
    // sprintf(ControlBoardPort, "\\\\.\\COM7");
 
@@ -192,6 +194,8 @@ int main() {
     // Zamknięcie portu COM
     CloseHandle(hControlBoard);
     CloseHandle(hTopBoard);
+
+    SetThreadExecutionState(ES_CONTINUOUS);
 
     return 0;
 }
