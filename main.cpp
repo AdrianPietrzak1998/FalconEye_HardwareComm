@@ -38,6 +38,7 @@ const uint8_t ArgumentQuanityTopBoard[] = {8, 5, 0, 0, 0, 0, 0, 0, 0, 0, 2};
 bool ExitVar = false;
 
 std::string TerminalData;
+std::string InputFileName = "Input.txt";
 
 
 void ReadPort(HANDLE hSerial, void(*ptrParser)(char *));
@@ -266,9 +267,9 @@ void ReadCommand(void)
     std::filesystem::file_time_type Time;
     while(true)
     {
-        if(std::filesystem::last_write_time("Input.txt") != Time)
+        if(std::filesystem::last_write_time(InputFileName) != Time)
         {
-            std::ifstream file("Input.txt");
+            std::ifstream file(InputFileName);
             if (file.peek() != std::ifstream::traits_type::eof())
             {
                 std::string Line;
@@ -282,7 +283,7 @@ void ReadCommand(void)
                     TerminalDataParser(Line);
                 }
                 file.close();
-                std::ofstream clrFile("Input.txt");
+                std::ofstream clrFile(InputFileName);
                 if(!clrFile.is_open())
                 {
                     std::cout << "Error clear file" << std::endl;
@@ -290,11 +291,11 @@ void ReadCommand(void)
                 }
                 clrFile.close();
             }
-            Time = std::filesystem::last_write_time("Input.txt");
+            Time = std::filesystem::last_write_time(InputFileName);
 
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        std::this_thread::sleep_for(std::chrono::milliseconds(40));
         if(threadTerminate) break;
     }
 }
